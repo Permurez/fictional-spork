@@ -43,3 +43,9 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# Test files
+test_*.py

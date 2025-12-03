@@ -71,6 +71,9 @@ class DatabaseManager:
             listing = Listing(**listing_data)
             session.add(listing)
             session.commit()
+            session.refresh(listing)
+            # Expunge so it can be used after session closes
+            session.expunge(listing)
             return listing
         except Exception as e:
             session.rollback()
@@ -83,6 +86,9 @@ class DatabaseManager:
         session = self.get_session()
         try:
             listings = session.query(Listing).filter_by(notified=False).all()
+            # Expunge objects so they can be used after session closes
+            for listing in listings:
+                session.expunge(listing)
             return listings
         finally:
             session.close()
@@ -103,6 +109,9 @@ class DatabaseManager:
         session = self.get_session()
         try:
             criteria = session.query(ClientCriteria).filter_by(active=True).all()
+            # Expunge objects so they can be used after session closes
+            for criterion in criteria:
+                session.expunge(criterion)
             return criteria
         finally:
             session.close()
@@ -114,7 +123,10 @@ class DatabaseManager:
             criteria = ClientCriteria(**criteria_data)
             session.add(criteria)
             session.commit()
-            return criteria
+            session.refresh(criteria)
+            criteria_id = criteria.id
+            criteria_name = criteria.client_name
+            return criteria_id, criteria_name
         except Exception as e:
             session.rollback()
             raise e

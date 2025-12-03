@@ -116,8 +116,8 @@ class OLXMonitor:
                 'active': True
             }
             
-            criteria = self.db_manager.add_client_criteria(sample_criteria)
-            logger.info(f"Added sample criteria: {criteria}")
+            criteria_id, criteria_name = self.db_manager.add_client_criteria(sample_criteria)
+            logger.info(f"Added sample criteria with ID: {criteria_id}")
             print(f"\n✅ Sample client criteria added for {sample_criteria['client_name']}")
             
         except Exception as e:
