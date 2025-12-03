@@ -52,11 +52,22 @@ class OLXMonitor:
         smtp_config = None
         
         if self.notification_method == 'email':
+            # Validate required SMTP configuration
+            smtp_server = os.getenv('SMTP_SERVER')
+            smtp_username = os.getenv('SMTP_USERNAME')
+            smtp_password = os.getenv('SMTP_PASSWORD')
+            
+            if not all([smtp_server, smtp_username, smtp_password]):
+                raise ValueError(
+                    "Email notification method requires SMTP_SERVER, SMTP_USERNAME, "
+                    "and SMTP_PASSWORD to be set in environment variables"
+                )
+            
             smtp_config = {
-                'server': os.getenv('SMTP_SERVER'),
+                'server': smtp_server,
                 'port': int(os.getenv('SMTP_PORT', 587)),
-                'username': os.getenv('SMTP_USERNAME'),
-                'password': os.getenv('SMTP_PASSWORD')
+                'username': smtp_username,
+                'password': smtp_password
             }
         
         self.notifier = NotificationManager(self.notification_method, smtp_config)

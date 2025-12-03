@@ -1,7 +1,7 @@
 """
 Database models for OLX iPhone listings scraper
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -22,7 +22,7 @@ class Listing(Base):
     location = Column(String)
     description = Column(String)
     posted_date = Column(DateTime)
-    scraped_date = Column(DateTime, default=datetime.utcnow)
+    scraped_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     notified = Column(Boolean, default=False)
     
     def __repr__(self):
@@ -41,7 +41,7 @@ class ClientCriteria(Base):
     keywords = Column(String)  # Comma-separated keywords
     location_filter = Column(String)
     active = Column(Boolean, default=True)
-    created_date = Column(DateTime, default=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<ClientCriteria(client_name='{self.client_name}', price_range={self.min_price}-{self.max_price})>"

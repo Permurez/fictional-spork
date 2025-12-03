@@ -3,6 +3,7 @@ Notification system for sending alerts about new iPhone listings
 """
 import logging
 import smtplib
+import html
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict
@@ -99,7 +100,7 @@ class NotificationManager:
         msg['From'] = self.smtp_config.get('username', 'olx-scraper@example.com')
         msg['To'] = criteria.client_email
         
-        # Create email body
+        # Create email body (text version doesn't need escaping)
         text = f"""
 Hello {criteria.client_name},
 
@@ -121,17 +122,23 @@ Act fast before it's gone!
 This is an automated notification from OLX iPhone Listing Scraper
 """
         
-        html = f"""
+        # Escape HTML to prevent XSS
+        escaped_client_name = html.escape(criteria.client_name)
+        escaped_title = html.escape(listing.title)
+        escaped_location = html.escape(listing.location or '')
+        escaped_url = html.escape(listing.url)
+        
+        html_content = f"""
 <html>
 <body>
-    <h2>Hello {criteria.client_name},</h2>
+    <h2>Hello {escaped_client_name},</h2>
     <p>A new iPhone listing matching your criteria has been posted on OLX.pl:</p>
     
     <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
-        <h3>{listing.title}</h3>
+        <h3>{escaped_title}</h3>
         <p><strong>Price:</strong> {listing.price} {listing.currency}</p>
-        <p><strong>Location:</strong> {listing.location}</p>
-        <p><a href="{listing.url}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Listing</a></p>
+        <p><strong>Location:</strong> {escaped_location}</p>
+        <p><a href="{escaped_url}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Listing</a></p>
     </div>
     
     <h4>Your search criteria:</h4>
@@ -150,7 +157,7 @@ This is an automated notification from OLX iPhone Listing Scraper
 """
         
         part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
+        part2 = MIMEText(html_content, 'html')
         
         msg.attach(part1)
         msg.attach(part2)

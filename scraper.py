@@ -3,7 +3,7 @@ Web scraper for OLX.pl iPhone listings
 """
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import logging
 
@@ -17,7 +17,7 @@ class OLXScraper:
     def __init__(self, base_url):
         self.base_url = base_url
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
     
     def scrape_listings(self, max_pages=3):
@@ -151,7 +151,7 @@ class OLXScraper:
                 'price': price,
                 'url': url,
                 'location': location,
-                'posted_date': datetime.utcnow(),
+                'posted_date': datetime.now(timezone.utc),
                 'description': ''
             }
             
