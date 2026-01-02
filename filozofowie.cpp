@@ -6,6 +6,9 @@
 #include <chrono>
 #include <ncurses.h>
 #include <unistd.h>
+#include <atomic>
+#include <csignal>
+#include <deque>
 
 enum State { THINKING, HUNGRY, EATING };
 
@@ -13,32 +16,54 @@ class DiningPhilosophers {
 private:
     int n;
     std::vector<State> state;
-    std::vector<std::mutex> forks;
+    std::vector<int> eat_count;
+    std::vector<int> think_count;
+    std::vector<int> fork_owner; // -1 free, otherwise philosopher id holding both adjacent forks
+    std::vector<bool> in_queue;
+    std::deque<int> wait_queue; // FIFO to avoid starvation
     std::vector<std::condition_variable> cv;
+    std::mutex mtx; // monitor lock guarding state/cv
     std::mutex display_mutex;
-    bool running;
+    std::atomic<bool> running;
 
-    void test(int i) {
+    static DiningPhilosophers* instance;
+    static void handle_sigint(int) {
+        if (instance) instance->stop();
+    }
+
+    void test_front() {
+        // Requires mtx to be held; serves requests in FIFO to prevent starvation
+        if (wait_queue.empty()) return;
+        int i = wait_queue.front();
         if (state[i] == HUNGRY && state[(i - 1 + n) % n] != EATING && state[(i + 1) % n] != EATING) {
+            wait_queue.pop_front();
+            in_queue[i] = false;
             state[i] = EATING;
+            ++eat_count[i];
+            fork_owner[i] = i;
+            fork_owner[(i + 1) % n] = i;
             cv[i].notify_one();
         }
     }
 
     void pickup(int i) {
-        std::unique_lock<std::mutex> lock(forks[i]);
-        state[i] = HUNGRY;
-        test(i);
-        while (state[i] != EATING) {
-            cv[i].wait(lock);
+        std::unique_lock<std::mutex> lock(mtx);
+        if (!in_queue[i]) {
+            wait_queue.push_back(i);
+            in_queue[i] = true;
         }
+        state[i] = HUNGRY;
+        test_front();
+        cv[i].wait(lock, [&]{ return state[i] == EATING || !running.load(); });
     }
 
     void putdown(int i) {
-        std::unique_lock<std::mutex> lock(forks[i]);
+        std::lock_guard<std::mutex> lock(mtx);
         state[i] = THINKING;
-        test((i - 1 + n) % n);
-        test((i + 1) % n);
+        ++think_count[i];
+        fork_owner[i] = -1;
+        fork_owner[(i + 1) % n] = -1;
+        test_front();
     }
 
     void philosopher(int id) {
@@ -48,34 +73,66 @@ private:
             
             // Eating
             pickup(id);
+            if (!running.load()) break; // exit early if stop was requested while waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(rand() % 1000 + 500));
             putdown(id);
         }
     }
 
     void display_loop() {
+        nodelay(stdscr, TRUE); // allow non-blocking key check
         while (running) {
             {
                 std::lock_guard<std::mutex> lock(display_mutex);
+                std::lock_guard<std::mutex> state_lock(mtx);
                 clear();
                 mvprintw(0, 0, "=== Dining Philosophers (%d) ===", n);
                 mvprintw(2, 0, "Philosophers:");
+                mvprintw(3, 0, "Idx  State       Ate  Thought");
                 
                 for (int i = 0; i < n; i++) {
                     const char* state_str = (state[i] == THINKING) ? "THINKING" : 
                                            (state[i] == HUNGRY) ? "HUNGRY" : "EATING";
-                    mvprintw(3 + i, 0, "  Philosopher %d: %s", i, state_str);
+                    mvprintw(4 + i, 0, "  %2d  %-10s  %4d  %7d", i, state_str, eat_count[i], think_count[i]);
+                }
+
+                mvprintw(5 + n, 0, "Waiting queue (front -> back):");
+                int line = 6 + n;
+                if (wait_queue.empty()) {
+                    mvprintw(line, 0, "  empty");
+                } else {
+                    int col = 0;
+                    for (int id : wait_queue) {
+                        mvprintw(line, col, "%d ", id);
+                        col += 3;
+                    }
+                }
+
+                mvprintw(7 + n, 0, "Forks (between i and i+1):");
+                for (int i = 0; i < n; i++) {
+                    int owner = fork_owner[i];
+                    if (owner == -1) {
+                        mvprintw(8 + n + i, 0, "  Fork %2d-%-2d: free", i, (i + 1) % n);
+                    } else {
+                        mvprintw(8 + n + i, 0, "  Fork %2d-%-2d: held by %d", i, (i + 1) % n, owner);
+                    }
                 }
                 
-                mvprintw(3 + n + 2, 0, "Press Ctrl+C to exit");
+                mvprintw(9 + 2 * n + 2, 0, "Press Ctrl+C or 'q' to exit");
                 refresh();
+            }
+            int ch = getch();
+            if (ch == 'q' || ch == 'Q') {
+                stop();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(400));
         }
     }
 
 public:
-    DiningPhilosophers(int num) : n(num), state(num, THINKING), forks(num), running(true) {
+    DiningPhilosophers(int num) : n(num), state(num, THINKING), eat_count(num, 0), think_count(num, 0), fork_owner(num, -1), in_queue(num, false), cv(num), running(true) {
+        instance = this;
+        signal(SIGINT, handle_sigint);
         initscr();
         noecho();
         cbreak();
@@ -97,15 +154,20 @@ public:
         for (auto& t : threads) {
             t.join();
         }
-        
-        running = false;
+
         display.join();
     }
 
     void stop() {
         running = false;
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto& c : cv) {
+            c.notify_all();
+        }
     }
 };
+
+DiningPhilosophers* DiningPhilosophers::instance = nullptr;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
